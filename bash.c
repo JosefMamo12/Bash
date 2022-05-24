@@ -11,34 +11,66 @@
 
 #define SIZE 100
 
-char *substr(const char *src, int m, int n)
+typedef struct Command
 {
-    // get the length of the destination string
-    int len = n - m;
-
-    // allocate (len + 1) chars for destination (+1 for extra null character)
-    char *dest = (char *)malloc(sizeof(char) * (len + 1));
-
-    // extracts characters between m'th and n'th index from source string
-    // and copy them into the destination string
-    for (int i = m; i < n && (*(src + i) != '\0'); i++)
-    {
-        *dest = *(src + i);
-        dest++;
-    }
-
-    // null-terminate the destination string
-    *dest = '\0';
-
-    // return the destination string
-    return dest - len;
-}
+    char **arguments;
+    struct Command *next;
+} cmdLine;
 
 struct DataItem
 {
     int key;
     char *data;
 };
+struct Command *head = NULL;
+struct Command *curr;
+
+void printCmd(cmdLine *dummy)
+{
+    int i = 0;
+    while (dummy)
+    {
+        while (dummy->arguments[i])
+        {
+            printf("%s ", dummy->arguments[i++]);
+            fflush(stdout);
+        }
+        i = 0;
+        printf("-> ");
+        fflush(stdout);
+
+        dummy = dummy->next;
+    }
+    printf("null\n");
+}
+
+void insertCommand(char **arg)
+{
+    int i = 0;
+    struct Command *cmd = (struct Command *)malloc(sizeof(struct Command));
+    cmd->arguments = (char **)malloc(sizeof(arg));
+    while (*arg)
+    {
+        cmd->arguments[i] = (char *)malloc(strlen(*arg));
+        memcpy(cmd->arguments[i++], *arg, strlen(*arg));
+        arg++;
+    }
+    if (!head)
+    {
+        cmd->next = NULL;
+        head = cmd;
+    }
+    else
+    {
+        curr = head;
+        while (curr->next)
+        {
+            curr = curr->next;
+        }
+        cmd->next = NULL;
+        curr->next = cmd;
+    }
+}
 
 struct DataItem *hashArray[SIZE];
 struct DataItem *dummyItem;
@@ -55,36 +87,52 @@ int hashCode(char *str)
     return hash % SIZE;
 }
 
-void loop_pipe(char *cmd[10][10])
+void loop_pipe(char *argv[10][10], int numberOfPipes)
 {
-    int p[2];
+    int status;
     pid_t pid;
-    int fd_in = 0;
+    int i = 0;
 
-    while (*cmd != NULL)
+    int prev_pipe, pipefds[2];
+    prev_pipe = STDIN_FILENO;
+
+    for (i = 0; i < numberOfPipes; i++)
     {
-        pipe(p);
-        if ((pid = fork()) == -1)
+        if (pipe(pipefds) < 0)
         {
+            perror("pipe");
             exit(EXIT_FAILURE);
         }
-        else if (pid == 0)
+
+        pid = fork();
+        if (pid == 0)
         {
-            dup2(fd_in, 0);
-            if (*(cmd + 1) != NULL)
-                dup2(p[1], 1);
-            close(p[0]);
-            execvp(*(cmd)[0], *cmd);
+            if (prev_pipe != STDIN_FILENO)
+            {
+                if (dup2(prev_pipe, STDIN_FILENO) < 0)
+                {
+                    perror("dup2");
+                    exit(EXIT_FAILURE);
+                }
+                close(prev_pipe);
+            }
+            dup2(pipefds[1], STDOUT_FILENO);
+            close(pipefds[1]);
+
+            execvp(argv[i][0], argv[i]);
+            perror("execvp failed");
             exit(EXIT_FAILURE);
         }
-        else
-        {
-            wait(NULL);
-            close(p[1]);
-            fd_in = p[0];
-            cmd++;
-        }
+        close(prev_pipe);
+        close(pipefds[1]);
+        prev_pipe = pipefds[0];
     }
+    if (prev_pipe != STDIN_FILENO)
+    {
+        dup2(prev_pipe, STDIN_FILENO);
+        close(prev_pipe);
+    }
+    execvp(argv[i][0], argv[i]);
 }
 
 void insert(char *key, char *data)
@@ -130,6 +178,7 @@ int main()
     struct sigaction sa;
     sa.sa_handler = &handler;
     sa.sa_flags = SA_RESTART;
+
     dummyItem = (struct DataItem *)malloc(sizeof(struct DataItem));
     dummyItem->key = -1;
     dummyItem->data = NULL;
@@ -139,13 +188,14 @@ int main()
     char *outfile;
 
     int i, fd, amper, redirect, retid, status, error, piping = 0, argc1;
-    char *argv[10][10], *argv1[10];
-    int last_command_flag = 0, number_of_pipes = 0;
+    char *argv[10][10];
+    int last_command_flag = 0, number_of_pipes;
 
     sigaction(SIGINT, &sa, NULL);
 
     while (1)
     {
+        number_of_pipes = 0;
         printf("hello: ");
         fgets(command, 1024, stdin);
         command[strlen(command) - 1] = '\0';
@@ -165,22 +215,30 @@ int main()
         token = strtok(command, " ");
         while (token != NULL)
         {
+            if (token != NULL && !strcmp(token, "|"))
+            {
+                argv[number_of_pipes][i] = NULL;
+                insertCommand(*argv);
+                number_of_pipes++;
+                i = 0;
+                token = strtok(NULL, " ");
+                continue;
+            }
+
             argv[number_of_pipes][i] = token;
             token = strtok(NULL, " ");
             i++;
-
-            if (token != NULL && !strcmp(token, "|"))
-            {
-                number_of_pipes++;
-                i = 0;
-                continue;
-            }
             argc1 = i;
         }
+
         argv[number_of_pipes][i] = NULL;
+        // insertCommand(argv[number_of_pipes]);
+        // printCmd(head);
         /* Is command empty */
         if (argv[0][0] == NULL)
+        {
             continue;
+        }
 
         if (number_of_pipes == 0)
         {
@@ -250,6 +308,8 @@ int main()
             }
         }
         /* for commands not part of the shell command language */
+        int j = 0;
+        int fildes[number_of_pipes][2];
         if (fork() == 0)
         {
             /* redirection of IO ? */
@@ -273,11 +333,9 @@ int main()
                 execvp(argv[0][0], argv[0]);
             }
 
-            if (number_of_pipes > 0)
-            {
+            else if (number_of_pipes > 0)
 
-                loop_pipe(argv);
-            }
+                loop_pipe(argv, number_of_pipes);
         }
         if (amper == 0)
             retid = wait(&status);
