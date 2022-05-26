@@ -11,70 +11,15 @@
 
 #define SIZE 100
 
-typedef struct Command
-{
-    char **arguments;
-    struct Command *next;
-} cmdLine;
-
-struct DataItem
+typedef struct DataItem
 {
     int key;
     char *data;
-};
-struct Command *head = NULL;
-struct Command *curr;
+} DataItem;
 
-void printCmd(cmdLine *dummy)
-{
-    int i = 0;
-    while (dummy)
-    {
-        while (dummy->arguments[i])
-        {
-            printf("%s ", dummy->arguments[i++]);
-            fflush(stdout);
-        }
-        i = 0;
-        printf("-> ");
-        fflush(stdout);
-
-        dummy = dummy->next;
-    }
-    printf("null\n");
-}
-
-void insertCommand(char **arg)
-{
-    int i = 0;
-    struct Command *cmd = (struct Command *)malloc(sizeof(struct Command));
-    cmd->arguments = (char **)malloc(sizeof(arg));
-    while (*arg)
-    {
-        cmd->arguments[i] = (char *)malloc(strlen(*arg));
-        memcpy(cmd->arguments[i++], *arg, strlen(*arg));
-        arg++;
-    }
-    if (!head)
-    {
-        cmd->next = NULL;
-        head = cmd;
-    }
-    else
-    {
-        curr = head;
-        while (curr->next)
-        {
-            curr = curr->next;
-        }
-        cmd->next = NULL;
-        curr->next = cmd;
-    }
-}
-
-struct DataItem *hashArray[SIZE];
-struct DataItem *dummyItem;
-struct DataItem *item;
+DataItem *hashArray[SIZE];
+DataItem *dummyItem;
+DataItem *item;
 
 int hashCode(char *str)
 {
@@ -85,6 +30,59 @@ int hashCode(char *str)
         hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
 
     return hash % SIZE;
+}
+
+void insert(char *key, char *data)
+
+{
+    DataItem *item = (DataItem *)malloc(sizeof(struct DataItem));
+    item->key = hashCode(key);
+    item->data = (char *)malloc(sizeof(strlen(data)));
+    memcpy(item->data, data, strlen(data));
+
+    int hashIndex = item->key;
+
+    while (hashArray[hashIndex] != NULL && hashArray[hashIndex]->key != -1)
+    {
+        ++hashIndex;
+        hashIndex %= SIZE;
+    }
+    hashArray[hashIndex] = item;
+}
+DataItem *search(char *key)
+{
+    int hashIndex = hashCode(key);
+
+    while (hashArray[hashIndex] != NULL)
+    {
+        if (hashArray[hashIndex]->key == hashIndex)
+        {
+            return hashArray[hashIndex];
+        }
+        ++hashIndex;
+        hashIndex %= SIZE;
+    }
+    return NULL;
+}
+
+int cd(char *pth)
+{
+    char path[SIZE];
+    strcpy(path, pth);
+
+    char cwd[SIZE];
+    if (pth[0] != '/')
+    {
+        getcwd(cwd, sizeof(cwd));
+        strcat(cwd, "/");
+        strcat(cwd, path);
+        chdir(cwd);
+    }
+    else
+    {
+        chdir(pth);
+    }
+    return 0;
 }
 
 void loop_pipe(char *argv[10][10], int numberOfPipes)
@@ -135,39 +133,6 @@ void loop_pipe(char *argv[10][10], int numberOfPipes)
     execvp(argv[i][0], argv[i]);
 }
 
-void insert(char *key, char *data)
-
-{
-    struct DataItem *item = (struct DataItem *)malloc(sizeof(struct DataItem));
-    item->key = hashCode(key);
-    item->data = (char *)malloc(sizeof(strlen(data)));
-    memcpy(item->data, data, strlen(data));
-
-    int hashIndex = item->key;
-
-    while (hashArray[hashIndex] != NULL && hashArray[hashIndex]->key != -1)
-    {
-        ++hashIndex;
-        hashIndex %= SIZE;
-    }
-    hashArray[hashIndex] = item;
-}
-struct DataItem *search(char *key)
-{
-    int hashIndex = hashCode(key);
-
-    while (hashArray[hashIndex] != NULL)
-    {
-        if (hashArray[hashIndex]->key == hashIndex)
-        {
-            return hashArray[hashIndex];
-        }
-        ++hashIndex;
-        hashIndex %= SIZE;
-    }
-    return NULL;
-}
-
 void handler(int sig)
 {
     printf("You typed Control-C!\n");
@@ -175,6 +140,8 @@ void handler(int sig)
 
 int main()
 {
+    char directory[SIZE];
+    char prompt[SIZE] = "hello:";
     struct sigaction sa;
     sa.sa_handler = &handler;
     sa.sa_flags = SA_RESTART;
@@ -183,7 +150,7 @@ int main()
     dummyItem->key = -1;
     dummyItem->data = NULL;
 
-    char command[1024], last_command[1024];
+    char command[1024], last_command[1024] = "";
     char *token;
     char *outfile;
 
@@ -196,7 +163,7 @@ int main()
     while (1)
     {
         number_of_pipes = 0;
-        printf("hello: ");
+        printf("%s ", prompt);
         fgets(command, 1024, stdin);
         command[strlen(command) - 1] = '\0';
         if (strcmp(command, "!!"))
@@ -218,7 +185,6 @@ int main()
             if (token != NULL && !strcmp(token, "|"))
             {
                 argv[number_of_pipes][i] = NULL;
-                insertCommand(*argv);
                 number_of_pipes++;
                 i = 0;
                 token = strtok(NULL, " ");
@@ -237,6 +203,7 @@ int main()
         /* Is command empty */
         if (argv[0][0] == NULL)
         {
+            clearerr(stdin);
             continue;
         }
 
@@ -250,6 +217,35 @@ int main()
         {
             exit(0);
         }
+        if (!strcmp(argv[0][0], "prompt") && !strcmp(argv[0][1], "=") && argv[0][2])
+        {
+            prompt[0] = '\0';
+            strcpy(prompt, argv[0][2]);
+            int i = 3;
+            while (argv[0][i])
+            {
+                strcat(prompt, " ");
+                strcat(prompt, argv[0][i]);
+                i++;
+            }
+            prompt[strlen(prompt)] = '\0';
+            clearerr(stdin);
+            continue;
+        }
+        if (!strcmp(argv[0][0], "cd") && argv[0][1])
+        {
+            int i = 2;
+            strcpy(directory, argv[0][1]);
+            while (argv[0][i])
+            {
+                strcat(directory, " ");
+                strcat(directory, argv[0][i]);
+                i++;
+            }
+            cd(directory);
+            clearerr(stdin);
+            continue;
+        }
         /* Does command line end with & */
         if (!strcmp(argv[number_of_pipes][argc1 - 1], "&"))
         {
@@ -259,10 +255,23 @@ int main()
         else
             amper = 0;
 
-        if (argc1 > 1 && !strcmp(argv[number_of_pipes][argc1 - 2], ">"))
+        if (argc1 > 1 && (!strcmp(argv[number_of_pipes][argc1 - 2], ">") || !strcmp(argv[number_of_pipes][argc1 - 2], ">>") || !strcmp(argv[number_of_pipes][argc1 - 2], "2>")))
         {
-            redirect = 1;
-            error = 0;
+            if (!strcmp(argv[number_of_pipes][argc1 - 2], ">"))
+            {
+                redirect = 1;
+                error = 0;
+            }
+            else if (!strcmp(argv[number_of_pipes][argc1 - 2], ">>"))
+            {
+                redirect = 2;
+                error = 0;
+            }
+            else
+            {
+                redirect = 1;
+                error = 1;
+            }
             argv[0][argc1 - 2] = NULL;
             outfile = argv[0][argc1 - 1];
         }
@@ -272,16 +281,11 @@ int main()
             error = 0;
         }
 
-        if (argc1 > 2 && !strcmp(argv[number_of_pipes][argc1 - 2], "2>"))
+        if (argc1 > 1 && argv[number_of_pipes][argc1 - 2] && !strcmp(argv[number_of_pipes][argc1 - 2], "<"))
         {
-            redirect = 1;
             argv[0][argc1 - 2] = NULL;
             outfile = argv[0][argc1 - 1];
-            error = 1;
-        }
-        else
-        {
-            redirect = 0;
+            redirect = 3;
             error = 0;
         }
         if (number_of_pipes == 0)
@@ -289,12 +293,19 @@ int main()
             if (strcmp(argv[number_of_pipes][0], "echo") == 0 && strcmp(argv[number_of_pipes][1], "$?") == 0)
             {
                 printf("%d\n", retid);
+                clearerr(stdin);
                 continue;
             }
             if (strcmp(argv[number_of_pipes][0], "echo") == 0 && argv[number_of_pipes][1][0] == '$')
             {
                 item = search(argv[0][1]);
+                if(item){
                 printf("%s\n", item->data);
+                }
+                else{
+                    printf("error: No such argument\n");
+                }
+                clearerr(stdin);
                 continue;
             }
             if (argv[number_of_pipes][0][0] == '$' && strlen(argv[number_of_pipes][0]) > 1 && strcmp(argv[number_of_pipes][1], "=") == 0)
@@ -308,12 +319,24 @@ int main()
             }
         }
         /* for commands not part of the shell command language */
-        int j = 0;
-        int fildes[number_of_pipes][2];
         if (fork() == 0)
         {
+
+            if (redirect == 3)
+            {
+                fd = open(outfile, O_RDONLY, 0777);
+                dup2(fd, STDIN_FILENO);
+                close(fd);
+            }
+            else if (redirect == 2)
+            {
+                fd = open(outfile, O_APPEND | O_CREAT | O_WRONLY, 0644);
+                dup2(fd, STDOUT_FILENO);
+                close(fd);
+            }
+
             /* redirection of IO ? */
-            if (redirect && !error)
+            else if (redirect == 1 && !error)
             {
                 fd = creat(outfile, 0660);
                 close(STDOUT_FILENO);
@@ -321,7 +344,7 @@ int main()
                 close(fd);
                 /* stdout is now redirected */
             }
-            if (redirect && error)
+            else if (redirect == 1 && error)
             {
                 fd = creat(outfile, 0660);
                 close(STDERR_FILENO);
