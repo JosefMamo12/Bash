@@ -86,17 +86,21 @@ int hashCode(char *str)
 
     return hash % SIZE;
 }
-int cd (char *pth){
+int cd(char *pth)
+{
     char path[SIZE];
-    strcpy(path,pth);
+    strcpy(path, pth);
 
     char cwd[SIZE];
-    if(pth[0] != '/'){
-        getcwd(cwd,sizeof(cwd));
-        strcat(cwd,"/");
-        strcat(cwd,path);
+    if (pth[0] != '/')
+    {
+        getcwd(cwd, sizeof(cwd));
+        strcat(cwd, "/");
+        strcat(cwd, path);
         chdir(cwd);
-    }else{
+    }
+    else
+    {
         chdir(pth);
     }
     return 0;
@@ -104,20 +108,18 @@ int cd (char *pth){
 
 void loop_pipe(cmdLine *commands, int numberOfPipes)
 {
+    printCmd(commands);
     int status;
     pid_t pid;
     int i = 0;
-
     int prev_pipe, pipefds[2];
     prev_pipe = STDIN_FILENO;
 
-    for (i = 0; i < numberOfPipes; i++)
+    for (i = 0; i < numberOfPipes + 1; i++)
     {
-        if (i > 0)
-        {
-            
+        if (i != 0)
             commands = commands->next;
-        }
+
         if (pipe(pipefds) < 0)
         {
             perror("pipe");
@@ -138,7 +140,6 @@ void loop_pipe(cmdLine *commands, int numberOfPipes)
             }
             dup2(pipefds[1], STDOUT_FILENO);
             close(pipefds[1]);
-
             execvp(*commands->arguments, commands->arguments);
             perror("execvp failed");
             exit(EXIT_FAILURE);
@@ -152,6 +153,7 @@ void loop_pipe(cmdLine *commands, int numberOfPipes)
         dup2(prev_pipe, STDIN_FILENO);
         close(prev_pipe);
     }
+
     execvp(*commands->arguments, commands->arguments);
 }
 
@@ -216,6 +218,7 @@ int main()
 
     while (1)
     {
+        head = NULL;
         number_of_pipes = 0;
         printf("%s: ", promopt);
         fgets(command, 1024, stdin);
@@ -274,7 +277,7 @@ int main()
         if (!strcmp(argv[0][0], "prompt") && !strcmp(argv[0][1], "=") && argv[0][2])
         {
             promopt[0] = '\0';
-            strcpy(promopt,argv[0][2]);
+            strcpy(promopt, argv[0][2]);
             int i = 3;
             while (argv[0][i])
             {
@@ -285,7 +288,8 @@ int main()
             promopt[strlen(promopt)] = '\0';
             continue;
         }
-        if(!strcmp(argv[0][0], "cd") && argv[0][1]){
+        if (!strcmp(argv[0][0], "cd") && argv[0][1])
+        {
             cd(argv[0][1]);
             continue;
         }
@@ -370,7 +374,8 @@ int main()
                 execvp(argv[0][0], argv[0]);
             }
 
-            else if (number_of_pipes > 0){
+            else if (number_of_pipes > 0)
+            {
                 loop_pipe(head, number_of_pipes);
             }
         }

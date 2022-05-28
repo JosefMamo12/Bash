@@ -84,8 +84,33 @@ int cd(char *pth)
     }
     return 0;
 }
+void inputRedirection(int fd, char *outfile)
+{
+    fd = open(outfile, O_RDONLY, 0777);
+    dup2(fd, STDIN_FILENO);
+    close(fd);
+}
+void appendRedirection(int fd, char *outfile)
+{
+    fd = open(outfile, O_APPEND | O_CREAT | O_WRONLY, 0644);
+    dup2(fd, STDOUT_FILENO);
+    close(fd);
+}
 
-void loop_pipe(char *argv[10][10], int numberOfPipes)
+void outputRedirection(int fd, char *outfile)
+{
+    fd = creat(outfile, 0660);
+    dup2(fd, STDOUT_FILENO);
+    close(fd);
+}
+void errorRedirection(int fd, char *outfile)
+{
+    fd = creat(outfile, 0660);
+    dup2(fd, STDERR_FILENO);
+    close(fd);
+}
+
+void loop_pipe(char *argv[10][SIZE], int numberOfPipes)
 {
     int status;
     pid_t pid;
@@ -103,7 +128,7 @@ void loop_pipe(char *argv[10][10], int numberOfPipes)
         }
 
         pid = fork();
-        if (pid == 0)
+        if (pid == 0) /*If it is the child proccess */
         {
             if (prev_pipe != STDIN_FILENO)
             {
@@ -155,7 +180,7 @@ int main()
     char *outfile;
 
     int i, fd, amper, redirect, retid, status, error, piping = 0, argc1;
-    char *argv[10][10];
+    char *argv[10][SIZE];
     int last_command_flag = 0, number_of_pipes;
 
     sigaction(SIGINT, &sa, NULL);
@@ -198,8 +223,7 @@ int main()
         }
 
         argv[number_of_pipes][i] = NULL;
-        // insertCommand(argv[number_of_pipes]);
-        // printCmd(head);
+
         /* Is command empty */
         if (argv[0][0] == NULL)
         {
@@ -299,10 +323,12 @@ int main()
             if (strcmp(argv[number_of_pipes][0], "echo") == 0 && argv[number_of_pipes][1][0] == '$')
             {
                 item = search(argv[0][1]);
-                if(item){
-                printf("%s\n", item->data);
+                if (item)
+                {
+                    printf("%s\n", item->data);
                 }
-                else{
+                else
+                {
                     printf("error: No such argument\n");
                 }
                 clearerr(stdin);
@@ -324,32 +350,22 @@ int main()
 
             if (redirect == 3)
             {
-                fd = open(outfile, O_RDONLY, 0777);
-                dup2(fd, STDIN_FILENO);
-                close(fd);
+                inputRedirection(fd, outfile);
             }
             else if (redirect == 2)
             {
-                fd = open(outfile, O_APPEND | O_CREAT | O_WRONLY, 0644);
-                dup2(fd, STDOUT_FILENO);
-                close(fd);
+                appendRedirection(fd, outfile);
             }
 
             /* redirection of IO ? */
             else if (redirect == 1 && !error)
             {
-                fd = creat(outfile, 0660);
-                close(STDOUT_FILENO);
-                dup(fd);
-                close(fd);
+                outputRedirection(fd, outfile);
                 /* stdout is now redirected */
             }
             else if (redirect == 1 && error)
             {
-                fd = creat(outfile, 0660);
-                close(STDERR_FILENO);
-                dup(fd);
-                close(fd);
+                errorRedirection(fd, outfile);
             }
             if (number_of_pipes == 0)
             {
